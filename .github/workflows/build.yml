@@ -20,8 +20,16 @@ jobs:
           javac -d /tmp/t app/src/main/java/com/beejay/lumascene/ShuffleBag.java test/ShuffleBagTest.java
           java -cp /tmp/t ShuffleBagTest
       # Keeps the same test signing key between builds, so updates install over the old app.
+      # The key lives in GitHub's cache, never in this public repository.
       - uses: actions/cache@v4
-        with: { path: ~/.android/debug.keystore, key: lumascene-test-key }
+        with: { path: ~/lumascene-test.keystore, key: lumascene-test-key-v1 }
+      - name: Create the test key if there is none, and show its fingerprint
+        run: |
+          [ -f ~/lumascene-test.keystore ] || keytool -genkeypair -keystore ~/lumascene-test.keystore \
+            -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 \
+            -validity 10000 -dname "CN=LumaScene Test"
+          keytool -list -v -keystore ~/lumascene-test.keystore -storepass android | grep SHA1
+          echo "LUMASCENE_KEYSTORE=$HOME/lumascene-test.keystore" >> "$GITHUB_ENV"
       - run: gradle assembleDebug --no-daemon
       - run: cp app/build/outputs/apk/debug/app-debug.apk lumascene.apk
       - name: Publish download
