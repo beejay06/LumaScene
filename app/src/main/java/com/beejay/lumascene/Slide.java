@@ -5,12 +5,13 @@ import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.SurfaceTexture;
 import android.media.MediaPlayer;
+import android.net.Uri;
 import android.view.Gravity;
 import android.view.Surface;
 import android.view.TextureView;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
-import java.io.File;
+import java.util.Collections;
 
 /**
  * One full-screen photo or muted video over its blurred background.
@@ -20,7 +21,7 @@ final class Slide extends FrameLayout {
     private MediaPlayer player;
     private Surface surface;
 
-    Slide(Context context, Pictures pictures, File video, Runnable onDone) {
+    Slide(Context context, Pictures pictures, Item video, String token, Runnable onDone) {
         super(context);
         setBackgroundColor(Color.BLACK);
         if (pictures.blurred != null) {
@@ -47,7 +48,9 @@ final class Slide extends FrameLayout {
                 try {
                     surface = new Surface(texture);
                     player = new MediaPlayer();
-                    player.setDataSource(video.getPath());
+                    if (video.file != null) player.setDataSource(video.file.getPath());
+                    else player.setDataSource(context, Uri.parse(video.url + "=dv"),
+                        Collections.singletonMap("Authorization", "Bearer " + token)); // streamed, not saved
                     player.setSurface(surface);
                     player.setVolume(0, 0);
                     player.setOnVideoSizeChangedListener((p, vw, vh) -> fit(screen, vw, vh));

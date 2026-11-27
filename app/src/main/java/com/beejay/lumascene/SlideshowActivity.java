@@ -16,7 +16,6 @@ import android.widget.LinearLayout;
 import android.widget.TextClock;
 import android.widget.TextView;
 import android.widget.Toast;
-import java.io.File;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.Random;
@@ -33,7 +32,10 @@ public class SlideshowActivity extends Activity {
 
     private Prefs prefs;
     private Music music;
-    private Map<String, File> files;
+    private volatile Map<String, Item> items;
+    private volatile String token;      // Google only
+    private volatile long linksAt;      // Google links last an hour
+    private boolean google;
     private ShuffleBag bag;
     private FrameLayout stage;
     private Slide current;
@@ -90,42 +92,83 @@ public class SlideshowActivity extends Activity {
         root.setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
             | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
 
-        worker.execute(() -> {
-            Map<String, File> found = Library.scan(this);
-            main.post(() -> ready(found));
+        google = prefs.source().equals("google");
+        if (!google) {
+            worker.execute(() -> {
+                Map<String, Item> found = Library.scan(this);
+                main.post(() -> ready(found));
+            });
+            return;
+        }
+        Toast.makeText(this, "Loading from Google Photos\u2026", Toast.LENGTH_SHORT).show();
+        Google.authorize(this, new Google.Token() {
+            @Override
+            public void ok(String value) {
+                token = value;
+                worker.execute(() -> {
+                    try {
+                        Map<String, Item> found = Google.items(prefs.session(), value);
+                        linksAt = System.currentTimeMillis();
+                        main.post(() -> ready(found));
+                    } catch (Exception e) {
+                        main.post(() -> fail("Couldn't load your picks. They may have expired, so pick again. " + e.getMessage()));
+                    }
+                });
+            }
+
+            @Override
+            public void problem(String message) { fail(message); }
         });
     }
 
-    private void ready(Map<String, File> found) {
+    private void fail(String message) {
         if (isDestroyed()) return;
-        files = found;
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+        finish();
+    }
+
+    private void ready(Map<String, Item> found) {
+        if (isDestroyed()) return;
+        items = found;
         if (found.isEmpty()) {
-            Toast.makeText(this, "No photos or videos found on a USB stick.", Toast.LENGTH_LONG).show();
-            finish();
+            fail(google ? "No picks found. Choose Google Photos from the menu." : "No photos or videos found on a USB stick.");
             return;
         }
         bag = new ShuffleBag(new ArrayList<>(found.keySet()), prefs.seen(), prefs.shuffle(), new Random());
         if (visible) step(true);
     }
 
+    /** Fetches new links and sign-in before Google's hour runs out. Worker thread only. */
+    private void refresh() {
+        if (!google || System.currentTimeMillis() - linksAt < 45 * 60 * 1000L) return;
+        try {
+            String fresh = Google.silentToken(this);
+            Map<String, Item> found = Google.items(prefs.session(), fresh);
+            token = fresh;
+            items = found;
+            linksAt = System.currentTimeMillis();
+        } catch (Exception ignored) { } // loads will fail and say so if this keeps happening
+    }
+
     private void step(boolean forward) {
         if (bag == null || isDestroyed()) return;
         main.removeCallbacks(advance);
         String key = forward ? bag.next() : bag.previous();
-        File file = key == null ? null : files.get(key);
-        if (file == null) return;
+        if (key == null) return;
         int mine = ++request;
         loading = true;
         DisplayMetrics screen = getResources().getDisplayMetrics();
         worker.execute(() -> {
             if (mine != request) return;
-            Pictures loaded = Pictures.load(file, screen.widthPixels, screen.heightPixels);
+            refresh();
+            Item item = items.get(key);
+            Pictures loaded = item == null ? null : Pictures.load(item, token, screen.widthPixels, screen.heightPixels);
             main.post(() -> {
                 if (mine != request || isDestroyed() || !visible) return;
                 if (loaded == null) {
                     prefs.seen(bag.seen());
                     if (++failures >= 20) {
-                        Toast.makeText(this, "Can't read these files. Check the USB stick.", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, google ? "Can't load from Google. Check the internet, or pick again." : "Can't read these files. Check the USB stick.", Toast.LENGTH_LONG).show();
                         finish();
                     } else {
                         step(forward);
@@ -134,17 +177,17 @@ public class SlideshowActivity extends Activity {
                 }
                 failures = 0;
                 loading = false;
-                show(loaded, file);
+                show(loaded, item);
                 prefs.seen(bag.seen());
             });
         });
     }
 
-    private void show(Pictures loaded, File file) {
-        boolean video = Library.isVideo(file.getName());
+    private void show(Pictures loaded, Item item) {
+        boolean video = item.video;
         int mine = request;
         Runnable done = () -> { if (mine == request) step(true); };
-        Slide next = new Slide(this, loaded, video ? file : null, done);
+        Slide next = new Slide(this, loaded, video ? item : null, token, done);
         Slide old = current;
         current = next;
         // Anything left over from a fast double-press goes now.

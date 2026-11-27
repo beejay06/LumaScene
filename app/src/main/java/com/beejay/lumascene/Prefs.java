@@ -21,6 +21,8 @@ final class Prefs {
     boolean date() { return p.getBoolean("date", true); }
     boolean song() { return p.getBoolean("song", true); }
     String music() { return p.getString("music", "spotify"); }
+    String source() { return p.getString("source", "usb"); }
+    String session() { return p.getString("session", ""); } // Google picking session id
     Set<String> seen() { return new HashSet<>(p.getStringSet("seen", new HashSet<>())); }
 
     void put(String key, int value) { p.edit().putInt(key, value).apply(); }

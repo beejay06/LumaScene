@@ -44,12 +44,15 @@ public class MainActivity extends Activity {
         title.setTextColor(Color.WHITE);
         list.addView(title);
         TextView hint = new TextView(this);
-        hint.setText("Plug in a USB stick with photos and videos.");
+        hint.setText("Choose photos from Google Photos or a USB stick.");
         hint.setTextColor(Color.LTGRAY);
         hint.setPadding(0, 0, 0, dp(12));
         list.addView(hint);
 
         Button start = button(() -> "Start Slideshow", () -> startActivity(new Intent(this, SlideshowActivity.class)));
+        button(() -> "Choose from Google Photos", () -> startActivity(new Intent(this, GooglePhotosActivity.class)));
+        button(() -> "Show photos from: " + (prefs.source().equals("google") ? "Google Photos" : "USB stick"),
+            () -> prefs.put("source", prefs.source().equals("google") ? "usb" : "google"));
         button(() -> "Open " + musicName() + " to pick music", () -> music.command("open/" + prefs.music()));
         button(() -> "Music app: " + musicName(), () -> {
             prefs.put("music", prefs.music().equals("spotify") ? "tidal" : "spotify");
@@ -68,6 +71,15 @@ public class MainActivity extends Activity {
         button(() -> "Allow song titles (one-time permission)", () -> music.command("access"));
         start.requestFocus();
         askForPhotos();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        for (int i = 0; i < list.getChildCount(); i++) {
+            Object tag = list.getChildAt(i).getTag();
+            if (tag != null) ((Runnable) tag).run();
+        }
     }
 
     private Button button(Supplier<String> label, Runnable action) {

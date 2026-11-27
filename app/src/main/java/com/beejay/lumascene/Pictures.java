@@ -19,17 +19,25 @@ final class Pictures {
     String date;       // date taken, or null if the file doesn't say
 
     /** Returns null if the file can't be read. Call off the main thread. */
-    static Pictures load(File file, int width, int height) {
+    static Pictures load(Item item, String token, int width, int height) {
         try {
             Pictures out = new Pictures();
-            if (Library.isVideo(file.getName())) out.video(file);
-            else out.photo(file, width, height);
+            if (item.file == null) out.cloud(item, token, width, height);
+            else if (item.video) out.video(item.file);
+            else out.photo(item.file, width, height);
             if (out.image != null) out.blurred = blur(out.image);
-            else if (!Library.isVideo(file.getName())) return null;
+            else if (!item.video) return null;
             return out;
         } catch (Exception | OutOfMemoryError e) {
             return null;
         }
+    }
+
+    /** Google sends an already-upright picture sized for the screen (a still frame for videos). Held in memory only. */
+    private void cloud(Item item, String token, int width, int height) throws Exception {
+        byte[] bytes = Google.bytes(item.url + "=w" + width + "-h" + height, token);
+        image = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+        date = pretty(item.taken, "yyyy-MM-dd", TimeZone.getDefault());
     }
 
     private void photo(File file, int width, int height) throws Exception {

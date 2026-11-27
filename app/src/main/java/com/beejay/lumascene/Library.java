@@ -14,10 +14,13 @@ import java.util.Map;
 final class Library {
     private Library() { }
 
-    /** Key (stable if the stick is re-plugged) to file. */
-    static Map<String, File> scan(Context context) {
-        Map<String, File> out = new LinkedHashMap<>();
-        for (File root : usbRoots(context)) walk(root, root, out, 0);
+    /** Key (stable if the stick is re-plugged) to item. */
+    static Map<String, Item> scan(Context context) {
+        Map<String, File> found = new LinkedHashMap<>();
+        for (File root : usbRoots(context)) walk(root, root, found, 0);
+        Map<String, Item> out = new LinkedHashMap<>();
+        for (Map.Entry<String, File> e : found.entrySet())
+            out.put(e.getKey(), Item.usb(e.getValue(), isVideo(e.getValue().getName())));
         return out;
     }
 
